@@ -25,12 +25,10 @@ export default {
     ) {
       const targetUrl = url.searchParams.get('url');
 
-      // CORS headers
       const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': 'Range, Content-Type, User-Agent',
-        // Crucial: Expose the headers needed for reading size
         'Access-Control-Expose-Headers':
           'Content-Length, Content-Range, Content-Type, Accept-Ranges, Content-Disposition',
       };
@@ -50,7 +48,6 @@ export default {
         const upstreamUrl = new URL(targetUrl);
         const headers = new Headers(request.headers);
         
-        // Clean up headers for upstream request
         headers.set('Host', upstreamUrl.hostname);
         headers.set('Referer', upstreamUrl.origin);
         headers.delete('Origin'); 
@@ -64,15 +61,14 @@ export default {
 
         const responseHeaders = new Headers();
         
-        // Copy most headers (Robust Blocklist Method)
-        // We skip specific headers we want to manage manually
+        // Copy all headers except the ones we want to override
         const skipHeaders = [
           'content-encoding', 
           'content-length', 
           'transfer-encoding', 
           'connection', 
           'keep-alive',
-          'content-disposition', // We handle this manually to stop IDM
+          'content-disposition', // We handle this manually
           'content-type'         // We handle this manually
         ];
 
@@ -82,15 +78,15 @@ export default {
           }
         }
 
-        // --- IDM / DOWNLOAD FIX ---
-        // 1. Remove "attachment" directive so browser doesn't pop up "Save As"
+        // --- IDM FIX ---
+        // 1. Remove "attachment" directive so browser doesn't try to save it
         responseHeaders.delete('content-disposition');
         
         // 2. Force generic binary type.
-        // If we pass "video/mp4", IDM grabs it. "application/octet-stream" is safer.
+        // Hides "video/mp4" so IDM doesn't auto-trigger.
         responseHeaders.set('content-type', 'application/octet-stream');
 
-        // Restore Critical Sizing Headers if they exist
+        // Restore Critical Sizing Headers
         if (upstreamResponse.headers.has('Content-Length')) {
           responseHeaders.set('Content-Length', upstreamResponse.headers.get('Content-Length')!);
         }
@@ -98,7 +94,6 @@ export default {
           responseHeaders.set('Content-Range', upstreamResponse.headers.get('Content-Range')!);
         }
 
-        // Apply CORS
         Object.entries(corsHeaders).forEach(([key, value]) => {
           responseHeaders.set(key, value);
         });
@@ -116,7 +111,6 @@ export default {
       }
     }
 
-    // Default Remix handler
     return requestHandler(request, {
       cloudflare: { env, ctx },
     });
