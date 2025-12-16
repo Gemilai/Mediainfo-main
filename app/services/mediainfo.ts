@@ -56,7 +56,7 @@ export async function analyzeMedia(
         headers: { Range: 'bytes=0-0' },
       });
 
-      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      if (!response.ok) throw new Error(`Connection failed: ${response.status} ${response.statusText}`);
 
       const contentRange = response.headers.get('Content-Range');
       if (contentRange) {
@@ -67,12 +67,13 @@ export async function analyzeMedia(
       const contentLength = response.headers.get('Content-Length');
       if (contentLength) return parseInt(contentLength, 10);
 
-      return 1024 * 1024 * 1024 * 10; // Fallback
+      // Fallback
+      return 1024 * 1024 * 1024 * 10; 
     };
 
-    // B. Direct Chunk Reader (No buffering, fast!)
+    // B. Direct Chunk Reader
     const readChunk = async (size: number, offset: number): Promise<Uint8Array> => {
-      // UI Update: Show actual data usage
+      // UI Update
       totalBytesDownloaded += size;
       const mbRead = (totalBytesDownloaded / 1024 / 1024).toFixed(2);
       onStatus(`Analyzing metadata... (${mbRead} MB read)`);
@@ -85,7 +86,8 @@ export async function analyzeMedia(
       });
 
       if (!response.ok) {
-        throw new Error(`Read error: ${response.statusText}`);
+        // Detailed error for debugging
+        throw new Error(`Read error: ${response.status} ${response.statusText}`);
       }
 
       // Safety check for server ignoring Range
@@ -113,7 +115,7 @@ export async function analyzeMedia(
     }
   } catch (error) {
     console.error(error);
-    onStatus('Error occurred');
+    onStatus(error instanceof Error ? error.message : 'Error occurred');
     mediainfo.close();
     throw error;
   }
