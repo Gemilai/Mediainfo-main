@@ -1,20 +1,22 @@
-import { Form, useNavigation } from 'react-router';
+import { Form, useActionState, useNavigation } from 'react-router';
 import { motion } from 'motion/react';
 import { Loader2, Lock, User } from 'lucide-react';
 import type { Route } from './+types/login';
 import { createUserSession } from '../services/session.server';
 
 export const meta: Route.MetaFunction = () => {
-  return [{ title: 'Login - MediaInfo' }]; // Updated Title
+  return [{ title: 'Login - MediaPeek' }];
 };
 
+// Inside your action function
 export async function action({ request, context }: Route.ActionArgs) {
   const formData = await request.formData();
   const username = formData.get('username');
   const password = formData.get('password');
 
-  const validUser = context.cloudflare?.env?.AUTH_USER || 'admin';
-  const validPass = context.cloudflare?.env?.AUTH_PASS || 'password';
+  // Use variables from Cloudflare
+  const validUser = context.cloudflare.env.AUTH_USER;
+  const validPass = context.cloudflare.env.AUTH_PASS;
 
   if (username === validUser && password === validPass) {
     return createUserSession('/');
@@ -54,7 +56,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
               </motion.div>
               <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
               <p className="mt-2 text-sm text-gray-400">
-                Enter your credentials to access MediaInfo
+                Enter your credentials to access MediaPeek
               </p>
             </div>
 
@@ -109,7 +111,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
           
           <div className="bg-black/20 p-4 text-center">
             <p className="text-xs text-gray-500">
-              MediaInfo Protected Area
+              MediaPeek Protected Area
             </p>
           </div>
         </div>

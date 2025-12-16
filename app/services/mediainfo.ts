@@ -1,4 +1,4 @@
-import type { MediaInfo, ReadChunkFunc } from 'mediainfo.js';
+import type { MediaInfo } from 'mediainfo.js';
 
 type MediaInfoFactory = (opts: {
   format: 'text' | 'json' | 'object' | 'XML' | 'MAXML' | 'HTML' | string;
@@ -13,92 +13,95 @@ export async function analyzeMedia(
   onStatus: (status: string) => void,
   format: string = 'text',
 ): Promise<string> {
-  // --- 1. Validation ---
+  // --- 1. Validation Phase ---
   onStatus('Validating URL...');
+
+  // Basic URL check
   try {
     new URL(url);
   } catch {
     throw new Error('Invalid URL format');
   }
 
+  // Use our proxy endpoint
   const PROXY_ENDPOINT = '/resources/proxy';
   const proxyUrl = `${PROXY_ENDPOINT}?url=${encodeURIComponent(url)}`;
 
-  // --- 2. Load Module ---
+  // --- 2. Load MediaInfo Module ---
+  // We dynamic import only when needed
   onStatus('Loading MediaInfo engine...');
   let mediainfoModule: any;
   try {
-    // @ts-expect-error - dynamic import
+    // @ts-expect-error - mediainfo.js might not have perfect types
     mediainfoModule = await import('mediainfo.js');
   } catch (e) {
     throw new Error('Failed to load MediaInfo WASM module.');
   }
 
   const mediaInfoFactory = mediainfoModule.default as MediaInfoFactory;
+
   const mediainfo = await mediaInfoFactory({
     format,
-    coverData: false, // Optimization: skip cover art
+    coverData: false,
     full: true,
-    locateFile: (path: string) => `/${path}`,
+    locateFile: (path: string) => `/${path}`, // points to public/MediaInfoModule.wasm
   });
 
-  // Track total bytes for UI
-  let totalBytesDownloaded = 0;
-
   try {
-    // --- 3. IO Handlers ---
+    // --- 3. Define IO Handlers ---
 
-    // A. Robust Size Detection
-    // This logic mirrors your original code (HEAD first) but fixes the 405 error
-    // by falling back to GET if HEAD fails.
+    // A smart getSize that avoids HEAD requests (which cause 405 errors)
     const getSize = async (): Promise<number> => {
-      onStatus('Connecting to file...');
+      onStatus('Checking file size...');
 
-      try {
-        // Method 1: Try HEAD (Fastest, works for most servers)
-        const response = await fetch(proxyUrl, { method: 'HEAD' });
-
-        if (response.ok) {
-          const contentLength = response.headers.get('Content-Length');
-          if (contentLength) return parseInt(contentLength, 10);
-        }
-      } catch (e) {
-        // Ignore HEAD error and try fallback
-      }
-
-      // Method 2: Fallback to GET 0-0 (Fixes 405 Method Not Allowed)
+      // Instead of HEAD, we use GET with Range: bytes=0-0.
+      // This is safer because many servers block HEAD but allow GET.
       const response = await fetch(proxyUrl, {
         method: 'GET',
-        headers: { Range: 'bytes=0-0' },
+        headers: {
+          Range: 'bytes=0-0',
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`Connection failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to connect: ${response.status} ${response.statusText}`);
       }
 
+      // 1. Try to get size from Content-Range (Standard for Range requests)
+      // Format: bytes 0-0/123456 -> we want 123456
       const contentRange = response.headers.get('Content-Range');
       if (contentRange) {
         const match = contentRange.match(/\/(\d+)$/);
-        if (match) return parseInt(match[1], 10);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
       }
-      
+
+      // 2. Fallback to Content-Length
       const contentLength = response.headers.get('Content-Length');
       if (contentLength && response.status === 200) {
-         return parseInt(contentLength, 10);
+        // If status is 200, it means the server ignored Range and sent the whole file.
+        // We can use this size, but reading chunks later will be inefficient (downloading full file every time).
+        console.warn('Server ignored Range header (200 OK). Analysis might be slow.');
+        return parseInt(contentLength, 10);
       }
 
-      throw new Error('Could not determine exact file size. Server must support Range requests.');
+      // 3. Last resort fallback
+      if (contentLength) {
+        return parseInt(contentLength, 10);
+      }
+
+      throw new Error('Could not determine file size (Missing Content-Range and Content-Length)');
     };
 
-    // B. Direct Chunk Reader (No Prefetching)
-    // Removed cache/prefetch logic to fix the 10-second delay.
-    // It now reads exactly what MediaInfo asks for.
-    const readChunk: ReadChunkFunc = async (size: number, offset: number): Promise<Uint8Array> => {
-      // Simple UI Counter
-      totalBytesDownloaded += size;
-      const mbRead = (totalBytesDownloaded / 1024 / 1024).toFixed(2);
-      onStatus(`Analyzing... (${mbRead} MB read)`);
+    const readChunk = async (
+      size: number,
+      offset: number,
+    ): Promise<Uint8Array> => {
+      onStatus(`Reading data (${offset}-${offset + size})...`);
 
+      // We fetch a slightly larger chunk to reduce HTTP request overhead
+      // But for exactness we request what is needed.
       const response = await fetch(proxyUrl, {
         method: 'GET',
         headers: {
@@ -107,20 +110,29 @@ export async function analyzeMedia(
       });
 
       if (!response.ok) {
-        // This is where the 416 error usually happens if size was wrong
-        throw new Error(`Read error: ${response.status} ${response.statusText}`);
+        // Retry logic could go here
+        throw new Error(`Read error: ${response.statusText}`);
       }
 
+      // Safety check: if server returns 200 instead of 206 during a read, 
+      // it means it's trying to send the WHOLE file again.
       if (response.status === 200 && offset > 0) {
-        throw new Error('Server returned full file (200) instead of partial (206). Aborting.');
+        throw new Error(
+          'Server does not support Range requests (returned 200 OK). Aborting to prevent full download.',
+        );
       }
 
       const buffer = await response.arrayBuffer();
       return new Uint8Array(buffer);
     };
 
-    // --- 4. Run Analysis ---
+    // --- 4. Execute Analysis ---
+    onStatus('Starting analysis...');
+    
+    // MediaInfo needs to know the file size first
     const fileSize = await getSize();
+    
+    // Run the analysis using our custom read functions
     const result = await mediainfo.analyzeData(() => fileSize, readChunk);
 
     if (typeof result === 'string') {
@@ -134,9 +146,13 @@ export async function analyzeMedia(
       return json;
     }
   } catch (error) {
-    console.error(error);
-    onStatus(error instanceof Error ? error.message : 'Error occurred');
+    console.error('Analysis failed:', error);
+    onStatus('Error occurred.');
     mediainfo.close();
     throw error;
+  } finally {
+    // Cleanup not strictly necessary as we close above on error, 
+    // but good practice if we reused the instance.
+    // mediainfo.close(); 
   }
 }
