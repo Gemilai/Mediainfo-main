@@ -1,6 +1,7 @@
 import type { MetaFunction } from 'react-router';
-
+import type { Route } from './+types/_index'; // Auto-generated type
 import { MediaForm } from '../components/media-form';
+import { requireUserSession } from '../services/session.server';
 
 export const meta: MetaFunction = () => {
   return [
@@ -12,6 +13,13 @@ export const meta: MetaFunction = () => {
     },
   ];
 };
+
+// --- ADDED THIS LOADER ---
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireUserSession(request);
+  return null;
+}
+// -------------------------
 
 export default function Index() {
   return (
@@ -38,7 +46,7 @@ export default function Index() {
               rel="noreferrer"
               className="text-blue-400 underline underline-offset-4 transition-colors hover:text-blue-300"
             >
-              MediaInfo WebAssembly
+              mediainfo.js
             </a>
           </p>
         </div>
