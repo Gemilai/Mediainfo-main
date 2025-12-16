@@ -1,10 +1,11 @@
 import type { MetaFunction } from 'react-router';
+import { motion } from 'motion/react';
 import { MediaForm } from '../components/media-form';
 import { requireUserSession } from '../services/session.server';
 import type { Route } from './+types/_index';
 
 export const meta: MetaFunction = () => {
-  return [{ title: 'MediaPeek' }];
+  return [{ title: 'MediaInfo' }];
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -12,53 +13,136 @@ export async function loader({ request }: Route.LoaderArgs) {
   return null;
 }
 
+// Animation variants for background elements
+const floatAnimation = {
+  initial: { x: 0, y: 0 },
+  animate: {
+    x: [0, 30, -20, 0],
+    y: [0, -50, 20, 0],
+    transition: {
+      duration: 20,
+      repeat: Infinity,
+      ease: 'linear',
+    },
+  },
+};
+
+const pulseAnimation = {
+  animate: {
+    opacity: [0.3, 0.6, 0.3],
+    scale: [1, 1.2, 1],
+    transition: {
+      duration: 8,
+      repeat: Infinity,
+      ease: 'easeInOut',
+    },
+  },
+};
+
 export default function Index() {
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center overflow-hidden bg-[#050505] font-sans selection:bg-blue-500/30">
+    <div className="relative flex min-h-screen w-full flex-col items-center overflow-hidden bg-black font-sans text-gray-200">
       
-      {/* --- New GUI Background --- */}
-      <div className="absolute inset-0 pointer-events-none">
-        {/* 1. Subtle Noise Texture for texture */}
-        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}></div>
+      {/* --- MOVING BACKGROUND LAYER --- */}
+      <div className="absolute inset-0 z-0 overflow-hidden">
         
-        {/* 2. Grid Floor (Perspective) */}
-        <div 
+        {/* 1. Moving Grid (Forward Simulation) */}
+        <motion.div 
+          initial={{ backgroundPosition: '0px 0px' }}
+          animate={{ backgroundPosition: '0px 100px' }}
+          transition={{ repeat: Infinity, duration: 5, ease: 'linear' }}
           className="absolute inset-0 opacity-20"
           style={{
-            backgroundImage: 'linear-gradient(to right, #333 1px, transparent 1px), linear-gradient(to bottom, #333 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-            maskImage: 'linear-gradient(to bottom, transparent 5%, black 40%, transparent 90%)'
+            backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
+            backgroundSize: '100px 100px',
+            maskImage: 'linear-gradient(to bottom, transparent, 10%, black 40%, transparent 95%)', // Fade out top/bottom
+            transform: 'perspective(500px) rotateX(60deg) scale(2)' // 3D Tilt
           }}
         />
 
-        {/* 3. Small Stars / Floating Particles */}
-        <div className="absolute top-1/4 left-1/4 h-1 w-1 rounded-full bg-white/40 shadow-[0_0_10px_rgba(255,255,255,0.5)]"></div>
-        <div className="absolute top-1/3 right-1/3 h-1.5 w-1.5 rounded-full bg-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
-        <div className="absolute bottom-1/3 left-1/2 h-1 w-1 rounded-full bg-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
-        
-        {/* 4. Ambient Glows */}
-        <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-blue-900/10 blur-[100px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-900/10 blur-[100px]" />
+        {/* 2. Floating Nebula Blobs */}
+        <motion.div
+          variants={floatAnimation}
+          initial="initial"
+          animate="animate"
+          className="absolute -left-[10%] top-[10%] h-[600px] w-[600px] rounded-full bg-blue-900/20 blur-[120px]"
+        />
+        <motion.div
+          animate={{
+            x: [0, -40, 20, 0],
+            y: [0, 30, -50, 0],
+            transition: { duration: 25, repeat: Infinity, ease: 'linear' },
+          }}
+          className="absolute -right-[10%] bottom-[10%] h-[500px] w-[500px] rounded-full bg-indigo-900/20 blur-[120px]"
+        />
+
+        {/* 3. Twinkling Stars */}
+        <div className="absolute inset-0">
+           {/* We create a few "stars" manually for performance rather than 100s of divs */}
+           <motion.div 
+             animate={{ opacity: [0.2, 1, 0.2] }} 
+             transition={{ duration: 3, repeat: Infinity }}
+             className="absolute top-1/4 left-1/4 h-1 w-1 bg-white shadow-[0_0_10px_white] rounded-full" 
+           />
+           <motion.div 
+             animate={{ opacity: [0.2, 1, 0.2] }} 
+             transition={{ duration: 4, repeat: Infinity, delay: 1 }}
+             className="absolute top-1/3 right-1/3 h-0.5 w-0.5 bg-blue-400 shadow-[0_0_10px_blue] rounded-full" 
+           />
+           <motion.div 
+             animate={{ opacity: [0.1, 0.8, 0.1] }} 
+             transition={{ duration: 5, repeat: Infinity, delay: 2 }}
+             className="absolute bottom-1/3 left-1/2 h-1 w-1 bg-purple-400 shadow-[0_0_10px_purple] rounded-full" 
+           />
+        </div>
       </div>
 
-      <main className="relative z-10 mt-20 flex w-full max-w-5xl flex-col px-6 pb-20">
-        {/* Minimal Header */}
+      {/* --- CONTENT LAYER --- */}
+      <main className="relative z-10 mt-24 flex w-full max-w-6xl flex-col px-6 pb-20">
+        
+        {/* Header */}
         <div className="mb-12 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-lg shadow-blue-900/20">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          {/* Logo Icon */}
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.8 }}
+            className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)]"
+          >
+            <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-          </div>
-          <h1 className="bg-gradient-to-b from-white to-white/60 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-            MediaPeek
-          </h1>
-          <p className="mt-4 max-w-lg text-base text-gray-500">
+          </motion.div>
+
+          {/* Title */}
+          <motion.h1 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1, duration: 0.8 }}
+            className="text-5xl font-bold tracking-tight text-white sm:text-6xl"
+          >
+            MediaInfo
+          </motion.h1>
+
+          {/* Subtitle */}
+          <motion.p 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.8 }}
+            className="mt-6 max-w-lg text-lg text-gray-400"
+          >
             Professional media analysis tool. Paste a URL to extract technical metadata instantly.
-          </p>
+          </motion.p>
         </div>
 
-        <MediaForm />
+        {/* The Form */}
+        <motion.div
+           initial={{ y: 30, opacity: 0 }}
+           animate={{ y: 0, opacity: 1 }}
+           transition={{ delay: 0.3, duration: 0.8 }}
+        >
+          <MediaForm />
+        </motion.div>
       </main>
     </div>
   );
