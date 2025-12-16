@@ -8,15 +8,15 @@ export const meta: Route.MetaFunction = () => {
   return [{ title: 'Login - MediaPeek' }];
 };
 
+// Inside your action function
 export async function action({ request, context }: Route.ActionArgs) {
   const formData = await request.formData();
   const username = formData.get('username');
   const password = formData.get('password');
 
-  // Load from Cloudflare Variables
-  // If variables aren't set, default to admin/password for safety/testing
-  const validUser = context.cloudflare.env.AUTH_USER || 'admin';
-  const validPass = context.cloudflare.env.AUTH_PASS || 'password';
+  // Use variables from Cloudflare
+  const validUser = context.cloudflare.env.AUTH_USER;
+  const validPass = context.cloudflare.env.AUTH_PASS;
 
   if (username === validUser && password === validPass) {
     return createUserSession('/');
