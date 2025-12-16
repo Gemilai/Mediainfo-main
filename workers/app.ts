@@ -30,9 +30,9 @@ export default {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': 'Range, Content-Type, User-Agent',
-        // Expose headers needed for MediaInfo
+        // We expose these so the client can read the file size
         'Access-Control-Expose-Headers':
-          'Content-Length, Content-Range, Content-Type, Accept-Ranges',
+          'Content-Length, Content-Range, Content-Type, Accept-Ranges, Content-Disposition',
       };
 
       if (request.method === 'OPTIONS') {
@@ -52,7 +52,7 @@ export default {
         const upstreamUrl = new URL(targetUrl);
         const headers = new Headers(request.headers);
         
-        // Clean up headers
+        // Host handling
         headers.set('Host', upstreamUrl.hostname);
         headers.set('Referer', upstreamUrl.origin);
         headers.delete('Origin'); 
@@ -66,31 +66,42 @@ export default {
 
         const responseHeaders = new Headers();
         
-        // Allowed headers
-        const allowedHeaders = [
-          'content-length',
-          'content-range',
-          'accept-ranges',
-          'last-modified',
-          'etag'
+        // --- 1. ROBUST HEADER COPYING (Original Method) ---
+        // Instead of picking just a few, we copy EVERYTHING except problematic ones.
+        // This ensures we don't break connections that rely on obscure headers.
+        const skipHeaders = [
+          'content-encoding',
+          'content-length', 
+          'content-security-policy',
+          'access-control-allow-origin',
+          'transfer-encoding',
+          'connection',
+          'keep-alive',
+          // We explicitly skip these two so we can overwrite them below
+          'content-disposition',
+          'content-type'
         ];
 
         for (const [key, value] of upstreamResponse.headers.entries()) {
-          if (allowedHeaders.includes(key.toLowerCase())) {
+          if (!skipHeaders.includes(key.toLowerCase())) {
             responseHeaders.set(key, value);
           }
         }
 
-        // --- IDM Countermeasures ---
-        // 1. Remove "attachment" directives
-        responseHeaders.delete('content-disposition');
-        
-        // 2. Force generic binary type.
-        // If we send "video/mp4", IDM is more likely to grab it.
-        // "application/octet-stream" is boring and less likely to trigger sniffers.
+        // --- 2. IDM / DOWNLOAD FIX ---
+        // Force the browser to see this as a data stream, not a file download.
         responseHeaders.set('content-type', 'application/octet-stream');
-        
-        // 3. Ensure CORS headers are present
+        responseHeaders.delete('content-disposition'); // Remove "attachment; filename=..."
+
+        // Add back critical headers if they exist (sometimes skipped by loop above)
+        if (upstreamResponse.headers.has('Content-Length')) {
+          responseHeaders.set('Content-Length', upstreamResponse.headers.get('Content-Length')!);
+        }
+        if (upstreamResponse.headers.has('Content-Range')) {
+          responseHeaders.set('Content-Range', upstreamResponse.headers.get('Content-Range')!);
+        }
+
+        // Apply CORS
         Object.entries(corsHeaders).forEach(([key, value]) => {
           responseHeaders.set(key, value);
         });
