@@ -7,14 +7,6 @@ type MediaInfoFactory = (opts: {
   locateFile?: (path: string, prefix: string) => string;
 }) => Promise<MediaInfo>;
 
-// We assume metadata is usually found within the first 5MB of read operations.
-// This is used ONLY for the progress bar calculation, not for limiting the read.
-const ESTIMATED_METADATA_WORKLOAD = 2 * 1024 * 1024; // 2MB "Target" for 100%
-
-// Minimum chunk size to fetch from network to speed up processing
-// Even if MediaInfo asks for 10 bytes, we fetch this much to avoid latency overhead.
-const MIN_FETCH_SIZE = 256 * 1024; // 256KB
-
 export async function analyzeMedia(
   url: string,
   onResult: (text: string) => void,
@@ -56,7 +48,7 @@ export async function analyzeMedia(
   try {
     // --- 3. IO Handlers ---
 
-    // A. Get Size (Using GET 0-0 trick to avoid 405 errors)
+    // A. Get Size (Using GET 0-0 trick)
     const getSize = async (): Promise<number> => {
       onStatus('Connecting...');
       const response = await fetch(proxyUrl, {
@@ -75,53 +67,34 @@ export async function analyzeMedia(
       const contentLength = response.headers.get('Content-Length');
       if (contentLength) return parseInt(contentLength, 10);
 
-      // If unknown, return a safe large number, MediaInfo handles it
-      return 1024 * 1024 * 1024 * 10; 
+      return 1024 * 1024 * 1024 * 10; // Fallback
     };
 
-    // B. Smart Chunk Reader
+    // B. Direct Chunk Reader (No buffering, fast!)
     const readChunk = async (size: number, offset: number): Promise<Uint8Array> => {
-      // 1. Calculate "Relative Percentage" for UI
+      // UI Update: Show actual data usage
       totalBytesDownloaded += size;
-      
-      // Calculate 0-100% based on our "Estimated Workload" (2MB)
-      // If it goes over 100%, we cap it at 99% or show a spinner text.
-      let percent = Math.min(99, (totalBytesDownloaded / ESTIMATED_METADATA_WORKLOAD) * 100);
-      let percentStr = percent.toFixed(0);
-      
-      onStatus(`Analyzing... ${percentStr}%`);
+      const mbRead = (totalBytesDownloaded / 1024 / 1024).toFixed(2);
+      onStatus(`Analyzing metadata... (${mbRead} MB read)`);
 
-      // 2. Optimization: Fetch larger chunks than requested
-      // If MediaInfo asks for 100 bytes, fetching 100 bytes is slow due to network latency.
-      // We fetch at least MIN_FETCH_SIZE (256KB) unless we are near the end.
-      const fetchSize = Math.max(size, MIN_FETCH_SIZE);
-      
       const response = await fetch(proxyUrl, {
         method: 'GET',
         headers: {
-          Range: `bytes=${offset}-${offset + fetchSize - 1}`,
+          Range: `bytes=${offset}-${offset + size - 1}`,
         },
       });
 
       if (!response.ok) {
         throw new Error(`Read error: ${response.statusText}`);
       }
-      
-      // Check for full file download (server ignored Range)
+
+      // Safety check for server ignoring Range
       if (response.status === 200 && offset > 0) {
         throw new Error('Server returned full file (200) instead of partial (206). Aborting.');
       }
 
       const buffer = await response.arrayBuffer();
-      
-      // If we fetched more than needed (optimization), we need to slice it back
-      // to exactly what MediaInfo asked for.
-      const data = new Uint8Array(buffer);
-      
-      if (data.length > size) {
-         return data.subarray(0, size);
-      }
-      return data;
+      return new Uint8Array(buffer);
     };
 
     // --- 4. Run ---
