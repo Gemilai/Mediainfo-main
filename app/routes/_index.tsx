@@ -1,56 +1,41 @@
 import type { MetaFunction } from 'react-router';
-import type { Route } from './+types/_index'; // Auto-generated type
 import { MediaForm } from '../components/media-form';
 import { requireUserSession } from '../services/session.server';
+import type { Route } from './+types/_index';
 
 export const meta: MetaFunction = () => {
-  return [
-    { title: 'MediaPeek' },
-    {
-      name: 'description',
-      content:
-        'Analyze media files directly in your browser using Cloudflare Workers proxy and MediaInfo.js',
-    },
-  ];
+  return [{ title: 'MediaPeek' }];
 };
 
-// --- ADDED THIS LOADER ---
 export async function loader({ request }: Route.LoaderArgs) {
   await requireUserSession(request);
   return null;
 }
-// -------------------------
 
 export default function Index() {
   return (
-    <div className="flex min-h-screen flex-col font-sans text-gray-100">
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-start px-4 pt-4 lg:px-8">
-        <MediaForm />
-      </main>
-      <footer className="w-full border-t border-white/10 bg-black/20 text-center backdrop-blur-md">
-        <div className="mx-auto max-w-7xl px-6 py-6 lg:px-8">
-          <p className="text-sm font-medium text-gray-400">
-            Hosted on{' '}
-            <a
-              href="https://workers.cloudflare.com/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-orange-400 underline underline-offset-4 transition-colors hover:text-orange-300"
-            >
-              Cloudflare Workers
-            </a>{' '}
-            • Powered by{' '}
-            <a
-              href="https://mediainfo.js.org/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-400 underline underline-offset-4 transition-colors hover:text-blue-300"
-            >
-              mediainfo.js
-            </a>
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#050505] font-sans text-gray-200 selection:bg-white/20">
+      
+      {/* Background Ambience (Subtle & Greyish) */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 h-[500px] w-[1000px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/5 via-gray-900/0 to-transparent blur-3xl" />
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+      </div>
+
+      <main className="relative z-10 w-full max-w-4xl px-6">
+        {/* Header Area */}
+        <div className="mb-10 text-center">
+          <h1 className="text-3xl font-medium tracking-tight text-white sm:text-4xl">
+            Analyze Media
+          </h1>
+          <p className="mt-3 text-lg text-gray-500">
+            Extract technical metadata efficiently.
           </p>
         </div>
-      </footer>
+
+        {/* Main Application Card */}
+        <MediaForm />
+      </main>
     </div>
   );
 }
