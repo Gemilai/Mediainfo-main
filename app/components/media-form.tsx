@@ -1,196 +1,154 @@
 import { Input } from '@base-ui/react/input';
 import clsx from 'clsx';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
+import { Search, Terminal, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 
 import { analyzeMedia } from '../services/mediainfo';
 import { FormatMenu } from './format-menu';
 
-// Apple-style Activity Indicator (simple spinner for now, can be SVG)
-function ActivityIndicator() {
-  return (
-    <span className="relative flex h-5 w-5">
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-20"></span>
-      <span className="relative inline-flex h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
-    </span>
-  );
-}
-
-// Separate component to utilize useFormStatus
 function SubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <motion.button
+    <button
       type="submit"
       disabled={pending}
-      // Fix: Explicitly define starting color in style prop as HEX so motion can interpolate
-      style={{ backgroundColor: '#2563eb' }} // blue-600
-      whileHover={{ scale: 1.01, backgroundColor: '#4338ca' }} // indigo-700
-      whileTap={{ scale: 0.98 }}
-      className="w-full rounded-2xl py-4 text-lg font-semibold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-70"
+      className="group relative flex items-center justify-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-black transition-all hover:bg-gray-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
     >
       {pending ? (
-        <span className="flex items-center justify-center gap-3">
-          <ActivityIndicator />
-          <span>Processing...</span>
-        </span>
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
       ) : (
-        'Get Info'
+        <>
+          <span>Analyze</span>
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </>
       )}
-    </motion.button>
+    </button>
   );
 }
 
-// Initial state for the action
-type FormState = {
-  result: string | null;
-  error: string | null;
-  status: string;
-  url?: string;
-};
-
-const initialState: FormState = {
-  result: null,
-  error: null,
-  status: '',
-};
-
 export function MediaForm() {
   const [realtimeStatus, setRealtimeStatus] = useState<string>('');
-  const [selectedFormat, setSelectedFormat] = useState<string>('text');
+  const [format, setFormat] = useState<string>('text');
 
-  const [state, formAction, isPending] = useActionState(
-    async (_prevState: FormState, formData: FormData): Promise<FormState> => {
+  const [state, formAction] = useActionState(
+    async (_prevState: any, formData: FormData) => {
       const url = formData.get('url') as string;
-      if (!url) {
-        return { result: null, error: 'URL is required', status: '' };
-      }
+      if (!url) return { error: 'Please enter a valid URL' };
 
-      setRealtimeStatus('Connecting...');
       try {
-        const format = (formData.get('format') as string) || 'text';
+        setRealtimeStatus('Initializing...');
         const result = await analyzeMedia(
           url,
-          () => {},
-          (s) => setRealtimeStatus(s),
+          () => {}, // We handle final result via return
+          (status) => setRealtimeStatus(status),
           format,
         );
-        // Haptic Feedback on Success (Standard Web Vibration API)
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate(50);
-        }
-        return { result, error: null, status: 'Done', url };
-      } catch (err) {
-        // Haptic Feedback on Error
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([50, 100, 50]);
-        }
+        return { result, error: null };
+      } catch (e) {
         return {
+          error: e instanceof Error ? e.message : 'Unknown error occurred',
           result: null,
-          error: err instanceof Error ? err.message : 'Failed',
-          status: 'Failed',
-          url,
         };
       }
     },
-    initialState,
+    { result: null, error: null },
   );
 
   return (
-    <div className="flex min-h-[50vh] w-full flex-col items-center justify-center p-2 md:p-4">
-      {/* Main Container */}
-      <motion.div
-        initial={{ opacity: 0, y: 15, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }} // Apple-native ease
-        className="relative w-full max-w-5xl overflow-hidden rounded-3xl p-5 sm:p-12"
-      >
-        <div className="relative z-10 space-y-10">
-          {/* Header - Left Aligned & Apple Typography */}
-          <div className="space-y-2 text-left">
-            <h1 className="text-4xl font-semibold tracking-tight text-white drop-shadow-sm sm:text-5xl">
-              MediaPeek
-            </h1>
-            <p className="max-w-md text-lg font-normal text-gray-400">
-              Instant remote metadata analysis.
-            </p>
+    <div className="w-full">
+      <form action={formAction} className="relative">
+        {/* Input Bar Card */}
+        <div className="relative flex flex-col gap-2 rounded-2xl border border-white/5 bg-[#111] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/5 transition-all focus-within:ring-white/10 sm:flex-row sm:items-center sm:gap-0 sm:pr-2">
+          
+          {/* Format Dropdown (Left) */}
+          <div className="relative z-20 sm:border-r sm:border-white/5">
+             <FormatMenu value={format} onChange={setFormat} />
           </div>
 
-          <form action={formAction} className="space-y-8">
-            <div className="space-y-3">
-              <label
-                htmlFor="media-url"
-                className="ml-1 text-xs font-medium tracking-wider text-gray-500 uppercase"
-              >
-                Media URL
-              </label>
-              <div className="group relative">
-                <Input
-                  id="media-url"
-                  name="url"
-                  className="w-full rounded-2xl border-none bg-white/10 px-5 py-4 text-lg font-medium tracking-wide text-white placeholder-white/40 transition-colors outline-none focus:bg-white/20 focus:ring-0"
-                  placeholder="https://example.com/movie.mkv"
-                  autoComplete="off"
-                  // Fix: Ensure controlled/uncontrolled consistency
-                  defaultValue={state.url || ''}
-                  required
-                />
-              </div>
+          {/* URL Input (Center) */}
+          <div className="relative flex-1">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+              <Search className="h-4 w-4 text-gray-500" />
             </div>
+            <Input
+              name="url"
+              type="url"
+              placeholder="Paste media URL (e.g., https://example.com/video.mp4)"
+              autoComplete="off"
+              className="h-12 w-full bg-transparent pl-11 pr-4 text-sm text-gray-200 placeholder-gray-600 outline-none transition-colors"
+            />
+          </div>
 
-            <div className="flex gap-4">
-              <div className="relative">
-                <FormatMenu
-                  value={selectedFormat}
-                  onChange={setSelectedFormat}
-                />
-                <input type="hidden" name="format" value={selectedFormat} />
-              </div>
-              <SubmitButton />
-            </div>
-          </form>
-
-          {/* Status Indicator (Apple Style: Subtle, inline) */}
-          {(isPending || state.error) && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="overflow-hidden rounded-xl bg-white/5 px-4 py-3 backdrop-blur-md"
-            >
-              <p
-                className={clsx(
-                  'text-sm font-medium',
-                  state.error ? 'text-red-400' : 'text-gray-300',
-                )}
-              >
-                {state.error ? state.error : realtimeStatus}
-              </p>
-            </motion.div>
-          )}
+          {/* Submit Button (Right) */}
+          <div className="mt-2 sm:mt-0">
+            <SubmitButton />
+          </div>
         </div>
-      </motion.div>
+      </form>
 
-      {/* Result Card */}
-      {state.result && !isPending && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="mt-8 w-full max-w-5xl rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-2xl"
-        >
-          <div className="p-8">
-            <div className="mb-6 flex items-center justify-between border-b border-white/10 pb-4">
-              <h2 className="text-xl font-semibold text-white">Metadata</h2>
-              {/* Badge removed for cleaner HIG focus/selection look */}
+      {/* Status & Errors */}
+      <AnimatePresence mode="wait">
+        {(realtimeStatus || state.error) && !state.result && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mt-6 flex justify-center"
+          >
+            <div className={clsx(
+              "flex items-center gap-3 rounded-full border px-4 py-2 text-xs font-medium backdrop-blur-md",
+              state.error 
+                ? "border-red-500/20 bg-red-500/10 text-red-400" 
+                : "border-blue-500/20 bg-blue-500/10 text-blue-400"
+            )}>
+              {state.error ? <AlertCircle className="h-3.5 w-3.5" /> : <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
+              {state.error || realtimeStatus}
             </div>
-            <pre className="scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent max-h-[600px] overflow-auto font-mono text-xs leading-relaxed whitespace-pre text-gray-300 sm:text-sm md:whitespace-pre-wrap">
-              {state.result}
-            </pre>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Results Area */}
+      <AnimatePresence>
+        {state.result && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }} // smooth easeOutCubic
+            className="mt-8 overflow-hidden rounded-xl border border-white/5 bg-[#0F0F0F] shadow-2xl"
+          >
+            {/* Terminal Header */}
+            <div className="flex items-center justify-between border-b border-white/5 bg-[#141414] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#333]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#333]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#333]" />
+                </div>
+                <div className="ml-3 flex items-center gap-2 rounded bg-black/40 px-2 py-0.5 text-[10px] font-medium text-gray-500 font-mono border border-white/5">
+                  <Terminal className="h-3 w-3" />
+                  RESULT
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">
+                  {format}
+                </span>
+              </div>
+            </div>
+
+            {/* Terminal Body */}
+            <div className="relative group">
+               <pre className="max-h-[60vh] overflow-auto p-6 text-sm font-mono leading-relaxed text-gray-300 scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+                {state.result}
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
