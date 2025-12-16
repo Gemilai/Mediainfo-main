@@ -16,46 +16,46 @@ export async function analyzeMedia(
   // --- 1. Validation Phase ---
   onStatus('Validating URL...');
 
-  // Basic URL check
   try {
     new URL(url);
   } catch {
     throw new Error('Invalid URL format');
   }
 
-  // Use our proxy endpoint
   const PROXY_ENDPOINT = '/resources/proxy';
   const proxyUrl = `${PROXY_ENDPOINT}?url=${encodeURIComponent(url)}`;
 
-  // --- 2. Load MediaInfo Module ---
-  // We dynamic import only when needed
+  // --- 2. Load MediaInfo Engine ---
   onStatus('Loading MediaInfo engine...');
   let mediainfoModule: any;
   try {
-    // @ts-expect-error - mediainfo.js might not have perfect types
+    // @ts-expect-error - dynamic import
     mediainfoModule = await import('mediainfo.js');
   } catch (e) {
     throw new Error('Failed to load MediaInfo WASM module.');
   }
 
   const mediaInfoFactory = mediainfoModule.default as MediaInfoFactory;
-
   const mediainfo = await mediaInfoFactory({
     format,
     coverData: false,
     full: true,
-    locateFile: (path: string) => `/${path}`, // points to public/MediaInfoModule.wasm
+    locateFile: (path: string) => `/${path}`,
   });
 
+  // State to track progress
+  let fileSize = 0;
+  let totalBytesDownloaded = 0;
+
   try {
-    // --- 3. Define IO Handlers ---
+    // --- 3. Define Smart IO Handlers ---
 
-    // A smart getSize that avoids HEAD requests (which cause 405 errors)
+    // Function to get file size safely (Fixes the 405 Method Not Allowed error)
     const getSize = async (): Promise<number> => {
-      onStatus('Checking file size...');
+      onStatus('Connecting to file...');
 
-      // Instead of HEAD, we use GET with Range: bytes=0-0.
-      // This is safer because many servers block HEAD but allow GET.
+      // We use GET with a 0-byte range instead of HEAD.
+      // This tricks servers that block HEAD requests into giving us the size.
       const response = await fetch(proxyUrl, {
         method: 'GET',
         headers: {
@@ -67,8 +67,8 @@ export async function analyzeMedia(
         throw new Error(`Failed to connect: ${response.status} ${response.statusText}`);
       }
 
-      // 1. Try to get size from Content-Range (Standard for Range requests)
-      // Format: bytes 0-0/123456 -> we want 123456
+      // 1. Try Content-Range (Reliable for Range requests)
+      // Format: bytes 0-0/12345678
       const contentRange = response.headers.get('Content-Range');
       if (contentRange) {
         const match = contentRange.match(/\/(\d+)$/);
@@ -79,29 +79,36 @@ export async function analyzeMedia(
 
       // 2. Fallback to Content-Length
       const contentLength = response.headers.get('Content-Length');
-      if (contentLength && response.status === 200) {
-        // If status is 200, it means the server ignored Range and sent the whole file.
-        // We can use this size, but reading chunks later will be inefficient (downloading full file every time).
-        console.warn('Server ignored Range header (200 OK). Analysis might be slow.');
-        return parseInt(contentLength, 10);
-      }
-
-      // 3. Last resort fallback
       if (contentLength) {
         return parseInt(contentLength, 10);
       }
 
-      throw new Error('Could not determine file size (Missing Content-Range and Content-Length)');
+      throw new Error('Could not determine file size (Server missing size headers)');
     };
 
+    // Function to read specific chunks of the file
     const readChunk = async (
       size: number,
       offset: number,
     ): Promise<Uint8Array> => {
-      onStatus(`Reading data (${offset}-${offset + size})...`);
+      // Calculate percentage of TOTAL file downloaded so far
+      // This answers: "How much of the file did we actually have to fetch?"
+      totalBytesDownloaded += size;
+      
+      let progressText = '';
+      if (fileSize > 0) {
+        // Calculate percentage to 2 decimal places (e.g., "1.45%")
+        const percent = ((totalBytesDownloaded / fileSize) * 100).toFixed(2);
+        progressText = `(${percent}% read)`;
+      } else {
+        // Fallback if size is unknown
+        const mb = (totalBytesDownloaded / 1024 / 1024).toFixed(2);
+        progressText = `(${mb} MB read)`;
+      }
 
-      // We fetch a slightly larger chunk to reduce HTTP request overhead
-      // But for exactness we request what is needed.
+      // Show the cleaner status
+      onStatus(`Analyzing metadata... ${progressText}`);
+
       const response = await fetch(proxyUrl, {
         method: 'GET',
         headers: {
@@ -110,15 +117,12 @@ export async function analyzeMedia(
       });
 
       if (!response.ok) {
-        // Retry logic could go here
         throw new Error(`Read error: ${response.statusText}`);
       }
 
-      // Safety check: if server returns 200 instead of 206 during a read, 
-      // it means it's trying to send the WHOLE file again.
       if (response.status === 200 && offset > 0) {
         throw new Error(
-          'Server does not support Range requests (returned 200 OK). Aborting to prevent full download.',
+          'Server returned 200 OK (Full File) instead of 206 Partial Content. Aborting.',
         );
       }
 
@@ -127,12 +131,11 @@ export async function analyzeMedia(
     };
 
     // --- 4. Execute Analysis ---
-    onStatus('Starting analysis...');
     
-    // MediaInfo needs to know the file size first
-    const fileSize = await getSize();
+    // Step A: Get size first so we can use it for progress bars
+    fileSize = await getSize();
     
-    // Run the analysis using our custom read functions
+    // Step B: Run analysis
     const result = await mediainfo.analyzeData(() => fileSize, readChunk);
 
     if (typeof result === 'string') {
@@ -147,12 +150,8 @@ export async function analyzeMedia(
     }
   } catch (error) {
     console.error('Analysis failed:', error);
-    onStatus('Error occurred.');
+    onStatus(error instanceof Error ? error.message : 'Error occurred');
     mediainfo.close();
     throw error;
-  } finally {
-    // Cleanup not strictly necessary as we close above on error, 
-    // but good practice if we reused the instance.
-    // mediainfo.close(); 
   }
 }
