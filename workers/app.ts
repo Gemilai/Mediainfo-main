@@ -30,7 +30,6 @@ export default {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': 'Range, Content-Type, User-Agent',
-        // We expose these so the client can read the file size
         'Access-Control-Expose-Headers':
           'Content-Length, Content-Range, Content-Type, Accept-Ranges, Content-Disposition',
       };
@@ -52,7 +51,6 @@ export default {
         const upstreamUrl = new URL(targetUrl);
         const headers = new Headers(request.headers);
         
-        // Host handling
         headers.set('Host', upstreamUrl.hostname);
         headers.set('Referer', upstreamUrl.origin);
         headers.delete('Origin'); 
@@ -66,20 +64,15 @@ export default {
 
         const responseHeaders = new Headers();
         
-        // --- 1. ROBUST HEADER COPYING (Original Method) ---
-        // Instead of picking just a few, we copy EVERYTHING except problematic ones.
-        // This ensures we don't break connections that rely on obscure headers.
+        // Copy Headers (Blocklist approach for maximum compatibility)
         const skipHeaders = [
-          'content-encoding',
+          'content-encoding', 
           'content-length', 
-          'content-security-policy',
-          'access-control-allow-origin',
-          'transfer-encoding',
-          'connection',
+          'transfer-encoding', 
+          'connection', 
           'keep-alive',
-          // We explicitly skip these two so we can overwrite them below
-          'content-disposition',
-          'content-type'
+          'content-disposition', // We handle this manually
+          'content-type'         // We handle this manually
         ];
 
         for (const [key, value] of upstreamResponse.headers.entries()) {
@@ -88,12 +81,11 @@ export default {
           }
         }
 
-        // --- 2. IDM / DOWNLOAD FIX ---
-        // Force the browser to see this as a data stream, not a file download.
+        // --- IDM FIX: Force browser to treat as stream, not file ---
+        responseHeaders.delete('content-disposition');
         responseHeaders.set('content-type', 'application/octet-stream');
-        responseHeaders.delete('content-disposition'); // Remove "attachment; filename=..."
 
-        // Add back critical headers if they exist (sometimes skipped by loop above)
+        // Restore Critical Headers
         if (upstreamResponse.headers.has('Content-Length')) {
           responseHeaders.set('Content-Length', upstreamResponse.headers.get('Content-Length')!);
         }
@@ -101,7 +93,7 @@ export default {
           responseHeaders.set('Content-Range', upstreamResponse.headers.get('Content-Range')!);
         }
 
-        // Apply CORS
+        // CORS
         Object.entries(corsHeaders).forEach(([key, value]) => {
           responseHeaders.set(key, value);
         });
@@ -124,7 +116,6 @@ export default {
       }
     }
 
-    // Default Remix handler
     return requestHandler(request, {
       cloudflare: { env, ctx },
     });
